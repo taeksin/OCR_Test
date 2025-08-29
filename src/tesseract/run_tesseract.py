@@ -1,10 +1,21 @@
+"""OCR 처리를 위한 모듈"""
+import os
+import json
 import cv2  # type: ignore
 import pytesseract  # type: ignore
-import os
-from datetime import datetime
-from pdf2image import convert_from_path  # type: ignore
 from PIL import Image  # type: ignore
 import numpy as np
+
+# Set tesseract path if needed (common Windows paths)
+if os.name == 'nt':  # Windows
+    possible_paths = [
+        r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            pytesseract.pytesseract.tesseract_cmd = path
+            break
+
 
 def enhance_image_quality(image):
     """이미지 품질을 향상시키는 함수"""
@@ -14,64 +25,119 @@ def enhance_image_quality(image):
     
     # 그레이스케일 변환
     if len(image.shape) == 3:
-        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)  # type: ignore
     else:
         gray = image
     
     # 노이즈 제거
-    denoised = cv2.medianBlur(gray, 3)
+    denoised = cv2.medianBlur(gray, 3)  # type: ignore
     
     # 대비 향상 (CLAHE)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))  # type: ignore
     enhanced = clahe.apply(denoised)
     
     # 샤프닝
-    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-    sharpened = cv2.filter2D(enhanced, -1, kernel)
+    kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+    sharpened = cv2.filter2D(enhanced, -1, kernel)  # type: ignore
     
     return sharpened
 
-def ocr_pdf_pages(pdf_path, output_base_dir="test_result"):
-    """PDF 페이지별로 OCR을 수행하는 함수"""
+
+def ocr_with_string_mode(image, lang='kor+eng'):
+    """image_to_string 모드로 OCR 수행"""
+    return pytesseract.image_to_string(image, lang=lang)
+
+
+def ocr_with_data_mode(image, lang='kor+eng'):
+    """image_to_data 모드로 OCR 수행"""
+    data = pytesseract.image_to_data(image, lang=lang, output_type=pytesseract.Output.DICT)
+    return data
+
+
+def save_string_result(text, output_file, page_info=""):
+    """문자열 결과를 파일로 저장"""
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(f"=== {page_info} OCR 결과 (String Mode) ===\n\n")
+        f.write(text)
+
+
+def save_data_result(data, output_file, page_info=""):
+    """데이터 결과를 파일로 저장"""
+    # JSON 형태로 저장
+    json_file = output_file.replace('.txt', '_data.json')
+    with open(json_file, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
     
-    # 실행 시간 기반 폴더명 생성
-    timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
-    filename = os.path.splitext(os.path.basename(pdf_path))[0]
-    output_dir = os.path.join(output_base_dir, f"{timestamp}_{filename}")
+    # 텍스트 형태로도 저장 (가독성을 위해)
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(f"=== {page_info} OCR 결과 (Data Mode) ===\n\n")
+        
+        # 신뢰도가 높은 텍스트만 추출
+        texts = []
+        confidences = data['conf']
+        words = data['text']
+        
+        for i, (conf, word) in enumerate(zip(confidences, words)):
+            if conf > 0 and word.strip():  # 신뢰도 30 이상인 단어만
+                texts.append(f"[신뢰도: {conf}] {word}")
+        
+        f.write("=== 추출된 텍스트 (신뢰도 30 이상) ===\n")
+        f.write('\n'.join(texts))
+        
+        f.write(f"\n\n=== 상세 데이터 ===\n")
+        f.write(f"총 감지된 요소 수: {len(data['text'])}\n")
+        f.write(f"평균 신뢰도: {sum(confidences)/len(confidences):.2f}\n")
+        f.write(f"상세 데이터는 {json_file} 파일을 참조하세요.\n")
+
+
+def ocr_images(images, output_dir, ocr_mode, is_pdf=False):
+    """이미지 리스트에 대해 OCR을 수행하는 함수"""
     
     # 출력 디렉토리 생성
     os.makedirs(output_dir, exist_ok=True)
     
     try:
-        # PDF를 고해상도 이미지로 변환 (300 DPI)
-        print(f"PDF 변환 중: {pdf_path}")
-        pages = convert_from_path(pdf_path, dpi=300, fmt='RGB')
-        
-        print(f"총 {len(pages)} 페이지 발견")
-        
-        # 각 페이지별로 OCR 수행
-        for page_num, page_image in enumerate(pages, 1):
-            print(f"페이지 {page_num} 처리 중...")
+        for idx, image_input in enumerate(images, 1):
+            if is_pdf:
+                # PDF에서 변환된 PIL Image
+                print(f"페이지 {idx} 처리 중...")
+                image = image_input
+                page_info = f"페이지 {idx}"
+                file_prefix = f"page_{idx:03d}"
+            else:
+                # 이미지 파일 경로
+                print(f"이미지 {idx} 처리 중: {image_input}")
+                image = cv2.imread(image_input)  # type: ignore
+                if image is None:
+                    raise ValueError(f"이미지를 로드할 수 없습니다: {image_input}")
+                filename = os.path.splitext(os.path.basename(image_input))[0]
+                page_info = filename
+                file_prefix = filename
             
             # 이미지 품질 향상
-            enhanced_image = enhance_image_quality(page_image)
+            enhanced_image = enhance_image_quality(image)
             
-            # OCR 수행 (한국어 + 영어)
-            text = pytesseract.image_to_string(enhanced_image, lang='kor+eng')
+            # OCR 모드에 따라 처리
+            if ocr_mode == "image_to_string":
+                result = ocr_with_string_mode(enhanced_image)
+                output_file = os.path.join(output_dir, f"{file_prefix}_string.txt")
+                save_string_result(result, output_file, page_info)
+                
+            elif ocr_mode == "image_to_data":
+                result = ocr_with_data_mode(enhanced_image)
+                output_file = os.path.join(output_dir, f"{file_prefix}_data.txt")
+                save_data_result(result, output_file, page_info)
+                
+            else:
+                raise ValueError(f"지원하지 않는 OCR 모드: {ocr_mode}")
             
-            # 결과를 텍스트 파일로 저장
-            output_file = os.path.join(output_dir, f"page_{page_num:03d}.txt")
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(f"=== 페이지 {page_num} OCR 결과 ===\n\n")
-                f.write(text)
+            # 처리된 이미지도 저장
+            processed_image_file = os.path.join(output_dir, f"{file_prefix}_processed.png")
+            cv2.imwrite(processed_image_file, enhanced_image)  # type: ignore
             
-            # 처리된 이미지도 저장 (선택사항)
-            image_file = os.path.join(output_dir, f"page_{page_num:03d}_processed.png")
-            cv2.imwrite(image_file, enhanced_image)
-            
-            print(f"페이지 {page_num} 완료: {output_file}")
+            print(f"처리 완료: {output_file}")
         
-        print(f"\n모든 페이지 처리 완료!")
+        print("모든 이미지 처리 완료!")
         print(f"결과 저장 위치: {output_dir}")
         
     except Exception as e:
@@ -79,27 +145,3 @@ def ocr_pdf_pages(pdf_path, output_base_dir="test_result"):
         return None
     
     return output_dir
-
-if __name__ == "__main__":
-    # Set tesseract path if needed (common Windows paths)
-    if os.name == 'nt':  # Windows
-        possible_paths = [
-            r'C:\Program Files\Tesseract-OCR\tesseract.exe',
-            r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
-            r'C:\Users\{}\AppData\Local\Programs\Tesseract-OCR\tesseract.exe'.format(os.getenv('USERNAME'))
-        ]
-        for path in possible_paths:
-            if os.path.exists(path):
-                pytesseract.pytesseract.tesseract_cmd = path
-                break
-    
-    # PDF 파일 경로
-    pdf_path = './assets/인보이스.pdf'
-    
-    # PDF OCR 실행
-    result_dir = ocr_pdf_pages(pdf_path)
-    
-    if result_dir:
-        print(f"\n✅ OCR 완료! 결과는 '{result_dir}' 폴더에 저장되었습니다.")
-    else:
-        print("❌ OCR 처리 중 오류가 발생했습니다.")
