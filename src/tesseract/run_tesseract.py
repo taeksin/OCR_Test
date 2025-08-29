@@ -3,7 +3,7 @@ import os
 import json
 import cv2  # type: ignore
 import pytesseract  # type: ignore
-from PIL import Image  # type: ignore
+from PIL import Image, ImageDraw, ImageFont  # type: ignore
 import numpy as np
 
 # Set tesseract path if needed (common Windows paths)
@@ -92,6 +92,73 @@ def save_data_result(data, output_file, page_info=""):
         f.write(f"상세 데이터는 {json_file} 파일을 참조하세요.\n")
 
 
+def draw_bounding_boxes(image, ocr_data):
+    """OCR 결과에 바운딩 박스를 그리는 함수"""
+    # PIL Image로 변환 (이미 PIL Image인 경우 그대로 사용)
+    if isinstance(image, np.ndarray):
+        if len(image.shape) == 3:
+            # BGR to RGB 변환 (OpenCV는 BGR, PIL은 RGB)
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        else:
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        pil_image = Image.fromarray(image_rgb)
+    else:
+        pil_image = image.copy()
+    
+    draw = ImageDraw.Draw(pil_image)
+    
+    # 폰트 설정 (기본 폰트 사용)
+    try:
+        font = ImageFont.truetype("arial.ttf", 12)
+    except:
+        font = ImageFont.load_default()
+    
+    # 바운딩 박스 그리기
+    n_boxes = len(ocr_data['level'])
+    for i in range(n_boxes):
+        # 신뢰도가 30 이상이고 텍스트가 있는 경우만 박스 그리기
+        if int(ocr_data['conf'][i]) > 30 and ocr_data['text'][i].strip():
+            x = ocr_data['left'][i]
+            y = ocr_data['top'][i]
+            w = ocr_data['width'][i]
+            h = ocr_data['height'][i]
+            
+            # 바운딩 박스 그리기 (빨간색)
+            draw.rectangle([x, y, x + w, y + h], outline='red', width=4)
+            
+            # 신뢰도 텍스트 추가 (작은 글씨로)
+            conf_text = f"{ocr_data['conf'][i]}"
+            draw.text((x, y - 15), conf_text, fill='blue', font=font)
+    
+    return pil_image
+
+
+def save_original_and_boxed_images(image_input, output_dir, file_prefix, ocr_data=None):
+    """원본 이미지와 바운딩 박스가 그려진 이미지를 저장하는 함수"""
+    
+    # 원본 이미지 저장
+    original_image_file = os.path.join(output_dir, f"{file_prefix}_original.png")
+    
+    if isinstance(image_input, str):
+        # 파일 경로인 경우
+        original_image = Image.open(image_input)
+    else:
+        # PIL Image 객체인 경우
+        original_image = image_input
+    
+    # 원본 이미지 저장
+    original_image.save(original_image_file)
+    
+    # 바운딩 박스가 그려진 이미지 저장 (OCR 데이터가 있는 경우)
+    boxed_image_file = None
+    if ocr_data is not None:
+        boxed_image = draw_bounding_boxes(original_image, ocr_data)
+        boxed_image_file = os.path.join(output_dir, f"{file_prefix}_with_boxes.png")
+        boxed_image.save(boxed_image_file)
+    
+    return original_image_file, boxed_image_file
+
+
 def process_single_image(image_input, output_dir, ocr_mode, page_info="", file_prefix="image"):
     """단일 이미지에 대해 OCR을 수행하는 함수"""
     
@@ -113,6 +180,7 @@ def process_single_image(image_input, output_dir, ocr_mode, page_info="", file_p
         enhanced_image = enhance_image_quality(image)
         
         # OCR 모드에 따라 처리
+        ocr_data = None
         if ocr_mode == "image_to_string":
             result = ocr_with_string_mode(enhanced_image)
             output_file = os.path.join(output_dir, f"{file_prefix}_string.txt")
@@ -120,20 +188,28 @@ def process_single_image(image_input, output_dir, ocr_mode, page_info="", file_p
             
         elif ocr_mode == "image_to_data":
             result = ocr_with_data_mode(enhanced_image)
+            ocr_data = result  # 바운딩 박스 그리기용으로 저장
             output_file = os.path.join(output_dir, f"{file_prefix}_data.txt")
             save_data_result(result, output_file, page_info)
             
         else:
             raise ValueError(f"지원하지 않는 OCR 모드: {ocr_mode}")
         
-        # 처리된 이미지도 저장
+        # 처리된 이미지 저장
         processed_image_file = os.path.join(output_dir, f"{file_prefix}_processed.png")
         cv2.imwrite(processed_image_file, enhanced_image)  # type: ignore
+        
+        # 원본 이미지와 바운딩 박스가 그려진 이미지 저장
+        original_image_file, boxed_image_file = save_original_and_boxed_images(
+            image_input, output_dir, file_prefix, ocr_data
+        )
         
         return {
             'success': True,
             'output_file': output_file,
             'processed_image': processed_image_file,
+            'original_image': original_image_file,
+            'boxed_image': boxed_image_file,
             'page_info': page_info
         }
         

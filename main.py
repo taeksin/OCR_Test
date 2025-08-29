@@ -86,7 +86,12 @@ def process_pdf_parallel(pdf_path, output_dir, ocr_mode, max_workers=4):
             try:
                 result = future.result()
                 if result['success']:
-                    print(f"✅ {page_info} 처리 완료: {result['output_file']}")
+                    print(f"✅ {page_info} 처리 완료:")
+                    print(f"   📄 OCR 결과: {result['output_file']}")
+                    print(f"   🖼️ 원본 이미지: {result['original_image']}")
+                    if result.get('boxed_image'):
+                        print(f"   📦 바운딩 박스 이미지: {result['boxed_image']}")
+                    print(f"   🔧 처리된 이미지: {result['processed_image']}")
                 else:
                     print(f"❌ {page_info} 처리 실패: {result['error']}")
                 results.append(result)
@@ -112,7 +117,12 @@ def process_image_file(image_path, output_dir, ocr_mode):
     result = process_single_image(image_path, output_dir, ocr_mode, page_info, file_prefix)
     
     if result['success']:
-        print(f"✅ 처리 완료: {result['output_file']}")
+        print(f"✅ 처리 완료:")
+        print(f"   📄 OCR 결과: {result['output_file']}")
+        print(f"   🖼️ 원본 이미지: {result['original_image']}")
+        if result.get('boxed_image'):
+            print(f"   📦 바운딩 박스 이미지: {result['boxed_image']}")
+        print(f"   🔧 처리된 이미지: {result['processed_image']}")
         return output_dir
     else:
         print(f"❌ 처리 실패: {result['error']}")
