@@ -10,6 +10,8 @@ from src.tesseract.run_tesseract import ocr_images
 TESSERACT_OCR_MODE_LIST = ["image_to_string", "image_to_data"]
 TESSERACT_OCR_MODE = TESSERACT_OCR_MODE_LIST[1]
 
+PDF_TO_IMG_DPI = 1200
+
 FILES_LIST = [
     ('./assets/인보이스.pdf'),
     ('./assets/car_numberpad.png'),  # 이미지 파일 예시
@@ -36,7 +38,7 @@ def is_image_file(file_path):
     return any(file_path.lower().endswith(ext) for ext in image_extensions)
 
 
-def convert_pdf_to_images(pdf_path, dpi=1200):
+def convert_pdf_to_images(pdf_path, dpi=PDF_TO_IMG_DPI):
     """PDF를 이미지 리스트로 변환"""
     try:
         print(f"PDF 변환 중: {pdf_path}")
