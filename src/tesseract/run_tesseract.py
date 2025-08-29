@@ -16,6 +16,8 @@ if os.name == 'nt':  # Windows
             pytesseract.pytesseract.tesseract_cmd = path
             break
 
+# LANGUAGE = "kor+eng"
+LANGUAGE = "eng"
 
 def enhance_image_quality(image):
     """이미지 품질을 향상시키는 함수"""
@@ -43,12 +45,12 @@ def enhance_image_quality(image):
     return sharpened
 
 
-def ocr_with_string_mode(image, lang='kor+eng'):
+def ocr_with_string_mode(image, lang=LANGUAGE):
     """image_to_string 모드로 OCR 수행"""
     return pytesseract.image_to_string(image, lang=lang)
 
 
-def ocr_with_data_mode(image, lang='kor+eng'):
+def ocr_with_data_mode(image, lang=LANGUAGE):
     """image_to_data 모드로 OCR 수행"""
     data = pytesseract.image_to_data(image, lang=lang, output_type=pytesseract.Output.DICT)
     return data
@@ -90,58 +92,54 @@ def save_data_result(data, output_file, page_info=""):
         f.write(f"상세 데이터는 {json_file} 파일을 참조하세요.\n")
 
 
-def ocr_images(images, output_dir, ocr_mode, is_pdf=False):
-    """이미지 리스트에 대해 OCR을 수행하는 함수"""
+def process_single_image(image_input, output_dir, ocr_mode, page_info="", file_prefix="image"):
+    """단일 이미지에 대해 OCR을 수행하는 함수"""
     
     # 출력 디렉토리 생성
     os.makedirs(output_dir, exist_ok=True)
     
     try:
-        for idx, image_input in enumerate(images, 1):
-            if is_pdf:
-                # PDF에서 변환된 PIL Image
-                print(f"페이지 {idx} 처리 중...")
-                image = image_input
-                page_info = f"페이지 {idx}"
-                file_prefix = f"page_{idx:03d}"
-            else:
-                # 이미지 파일 경로
-                print(f"이미지 {idx} 처리 중: {image_input}")
-                image = cv2.imread(image_input)  # type: ignore
-                if image is None:
-                    raise ValueError(f"이미지를 로드할 수 없습니다: {image_input}")
-                filename = os.path.splitext(os.path.basename(image_input))[0]
-                page_info = filename
-                file_prefix = filename
-            
-            # 이미지 품질 향상
-            enhanced_image = enhance_image_quality(image)
-            
-            # OCR 모드에 따라 처리
-            if ocr_mode == "image_to_string":
-                result = ocr_with_string_mode(enhanced_image)
-                output_file = os.path.join(output_dir, f"{file_prefix}_string.txt")
-                save_string_result(result, output_file, page_info)
-                
-            elif ocr_mode == "image_to_data":
-                result = ocr_with_data_mode(enhanced_image)
-                output_file = os.path.join(output_dir, f"{file_prefix}_data.txt")
-                save_data_result(result, output_file, page_info)
-                
-            else:
-                raise ValueError(f"지원하지 않는 OCR 모드: {ocr_mode}")
-            
-            # 처리된 이미지도 저장
-            processed_image_file = os.path.join(output_dir, f"{file_prefix}_processed.png")
-            cv2.imwrite(processed_image_file, enhanced_image)  # type: ignore
-            
-            print(f"처리 완료: {output_file}")
+        # 이미지 처리
+        if isinstance(image_input, str):
+            # 이미지 파일 경로인 경우
+            image = cv2.imread(image_input)  # type: ignore
+            if image is None:
+                raise ValueError(f"이미지를 로드할 수 없습니다: {image_input}")
+        else:
+            # PIL Image 객체인 경우 (PDF 페이지)
+            image = image_input
         
-        print("모든 이미지 처리 완료!")
-        print(f"결과 저장 위치: {output_dir}")
+        # 이미지 품질 향상
+        enhanced_image = enhance_image_quality(image)
+        
+        # OCR 모드에 따라 처리
+        if ocr_mode == "image_to_string":
+            result = ocr_with_string_mode(enhanced_image)
+            output_file = os.path.join(output_dir, f"{file_prefix}_string.txt")
+            save_string_result(result, output_file, page_info)
+            
+        elif ocr_mode == "image_to_data":
+            result = ocr_with_data_mode(enhanced_image)
+            output_file = os.path.join(output_dir, f"{file_prefix}_data.txt")
+            save_data_result(result, output_file, page_info)
+            
+        else:
+            raise ValueError(f"지원하지 않는 OCR 모드: {ocr_mode}")
+        
+        # 처리된 이미지도 저장
+        processed_image_file = os.path.join(output_dir, f"{file_prefix}_processed.png")
+        cv2.imwrite(processed_image_file, enhanced_image)  # type: ignore
+        
+        return {
+            'success': True,
+            'output_file': output_file,
+            'processed_image': processed_image_file,
+            'page_info': page_info
+        }
         
     except Exception as e:
-        print(f"오류 발생: {e}")
-        return None
-    
-    return output_dir
+        return {
+            'success': False,
+            'error': str(e),
+            'page_info': page_info
+        }

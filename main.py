@@ -1,8 +1,10 @@
 """OCR 메인 실행 파일"""
 import os
+import multiprocessing
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pdf2image import convert_from_path  # type: ignore
-from src.tesseract.run_tesseract import ocr_images
+from src.tesseract.run_tesseract import process_single_image
 
 #################
 # 상수
@@ -11,10 +13,11 @@ TESSERACT_OCR_MODE_LIST = ["image_to_string", "image_to_data"]
 TESSERACT_OCR_MODE = TESSERACT_OCR_MODE_LIST[1]
 
 PDF_TO_IMG_DPI = 1200
+MAX_WORKERS = 4  # 병렬 처리 최대 스레드 수
 
 FILES_LIST = [
     ('./assets/인보이스.pdf'),
-    ('./assets/car_numberpad.png'),  # 이미지 파일 예시
+    # ('./assets/car_numberpad.png'),
 ]
 
 # --------------------------------------------------
@@ -50,7 +53,73 @@ def convert_pdf_to_images(pdf_path, dpi=PDF_TO_IMG_DPI):
         return None
 
 
-def process_file(file_path, ocr_mode=TESSERACT_OCR_MODE):
+def process_pdf_parallel(pdf_path, output_dir, ocr_mode, max_workers=4):
+    """PDF 페이지들을 병렬로 처리하는 함수"""
+    print("📄 PDF 파일로 인식됨")
+    
+    # PDF를 이미지로 변환
+    images = convert_pdf_to_images(pdf_path)
+    if images is None:
+        return None
+    
+    print(f"🔄 {len(images)} 페이지를 병렬 처리 시작 (최대 {max_workers} 스레드)")
+    
+    # 병렬 처리를 위한 작업 목록 생성
+    tasks = []
+    for idx, image in enumerate(images, 1):
+        page_info = f"페이지 {idx}"
+        file_prefix = f"page_{idx:03d}"
+        tasks.append((image, output_dir, ocr_mode, page_info, file_prefix))
+    
+    # 병렬 처리 실행
+    results = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # 모든 작업 제출
+        future_to_page = {
+            executor.submit(process_single_image, *task): task[3] 
+            for task in tasks
+        }
+        
+        # 완료된 작업들 처리
+        for future in as_completed(future_to_page):
+            page_info = future_to_page[future]
+            try:
+                result = future.result()
+                if result['success']:
+                    print(f"✅ {page_info} 처리 완료: {result['output_file']}")
+                else:
+                    print(f"❌ {page_info} 처리 실패: {result['error']}")
+                results.append(result)
+            except Exception as e:
+                print(f"❌ {page_info} 처리 중 예외 발생: {e}")
+                results.append({'success': False, 'error': str(e), 'page_info': page_info})
+    
+    # 결과 요약
+    success_count = sum(1 for r in results if r['success'])
+    print(f"🎯 처리 완료: {success_count}/{len(results)} 페이지 성공")
+    
+    return output_dir if success_count > 0 else None
+
+
+def process_image_file(image_path, output_dir, ocr_mode):
+    """단일 이미지 파일을 처리하는 함수"""
+    print("🖼️ 이미지 파일로 인식됨")
+    
+    filename = os.path.splitext(os.path.basename(image_path))[0]
+    page_info = filename
+    file_prefix = filename
+    
+    result = process_single_image(image_path, output_dir, ocr_mode, page_info, file_prefix)
+    
+    if result['success']:
+        print(f"✅ 처리 완료: {result['output_file']}")
+        return output_dir
+    else:
+        print(f"❌ 처리 실패: {result['error']}")
+        return None
+
+
+def process_file(file_path, ocr_mode=TESSERACT_OCR_MODE, max_workers=4):
     """파일을 처리하는 함수"""
     print(f"\n📁 처리 대상: {file_path}")
     print(f"🔧 OCR 모드: {ocr_mode}")
@@ -65,20 +134,9 @@ def process_file(file_path, ocr_mode=TESSERACT_OCR_MODE):
 
     # 파일 타입에 따라 처리
     if is_pdf_file(file_path):
-        print("📄 PDF 파일로 인식됨")
-        # PDF를 이미지로 변환
-        images = convert_pdf_to_images(file_path)
-        if images is None:
-            return None
-
-        # 이미지 리스트와 함께 OCR 처리
-        result = ocr_images(images, output_dir, ocr_mode, is_pdf=True)
-
+        result = process_pdf_parallel(file_path, output_dir, ocr_mode, max_workers)
     elif is_image_file(file_path):
-        print("🖼️ 이미지 파일로 인식됨")
-        # 단일 이미지를 리스트로 만들어서 처리
-        result = ocr_images([file_path], output_dir, ocr_mode, is_pdf=False)
-
+        result = process_image_file(file_path, output_dir, ocr_mode)
     else:
         print(f"❌ 지원하지 않는 파일 형식: {file_path}")
         return None
@@ -88,11 +146,15 @@ def process_file(file_path, ocr_mode=TESSERACT_OCR_MODE):
 
 def main():
     """메인 실행 함수"""
+    start_time = datetime.now()
+    
+    # CPU 코어 수의 절반을 워커 수로 설정
+    max_workers = max(1, multiprocessing.cpu_count())
 
     print("=== OCR 처리 시작 ===")
-
+    print(f"🔧 병렬 처리 설정: 최대 {max_workers} 스레드 (CPU 코어 수: {multiprocessing.cpu_count()})")
     for file_path in FILES_LIST:
-        result = process_file(file_path)
+        result = process_file(file_path, max_workers=max_workers)
 
         # 결과 확인
         if result:
@@ -100,7 +162,10 @@ def main():
         else:
             print(f"❌ 처리 실패: {file_path}")
 
-    print("\n=== 모든 OCR 처리 완료 ===")
+    end_time = datetime.now()
+    elapsed_time = end_time - start_time
+    print(f"\n === 모든 OCR 처리 완료 === ")
+    print(f"⏱️ 총 소요시간: {elapsed_time.total_seconds():.2f}초")
 
 
 if __name__ == "__main__":
