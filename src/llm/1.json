@@ -1,0 +1,90 @@
+{
+  "document_type": "COMMERCIAL INVOICE",
+  "airway_bill_number_field": true,
+  "invoice": {
+    "invoice_no": null,
+    "page": "1 of 3",
+    "your_invoice_number": null,
+    "invoice_date": null,
+    "ship_date": null,
+    "place_of_issuance": null,
+    "file_number": null,
+    "tax_id_no": null
+  },
+  "shipper": {
+    "full_name_and_address": null,
+    "address": null,
+    "city_state": null,
+    "tax_id_no": null
+  },
+  "consignee": {
+    "address": null
+  },
+  "bill_to": {
+    "notes": "Customer’s payment office; optional fields may be left blank or filled."
+  },
+  "relationship_flags": {
+    "related": null,
+    "not_related": null,
+    "sold": null,
+    "not_sold": null
+  },
+  "shipment_information": {
+    "customer_po_no": null,
+    "letter_of_credit_no": null,
+    "mode_of_transportation": null,
+    "po_date": null,
+    "currency": null,
+    "transportation_terms": null,
+    "reference_no": null,
+    "payment_terms": null,
+    "number_of_packages": null,
+    "country_of_ultimate_destination": null,
+    "incoterms_desc": null,
+    "gross_weight_kg": null
+  },
+  "line_items": [
+    {
+      "item_no": "111-111",
+      "description": "Example Product",
+      "brand_model": null,
+      "country_of_origin": null,
+      "part_serial_no": null,
+      "quantity": 100,
+      "uom": "EACH",
+      "unit_price": 19.95,
+      "total_price": 1995.0
+    },
+    {
+      "item_no": "222-222",
+      "description": "Another Example Product",
+      "brand_model": null,
+      "country_of_origin": null,
+      "part_serial_no": null,
+      "quantity": 100,
+      "uom": "EACH",
+      "unit_price": 20.95,
+      "total_price": 2095.0
+    }
+  ],
+  "totals": {
+    "subtotal_this_page": 4090.0,
+    "subtotal_other_pages": 10.0,
+    "shipping_handling": 20.0,
+    "insurance": 25.0,
+    "packaging_charge": 50.0,
+    "total_usd": 4195.0
+  },
+  "notes": [
+    "Form allows multiple pages and many lines of products.",
+    "Fields for notes with six lines available.",
+    "You may store partially filled forms and reuse."
+  ],
+  "declaration": "I declare all information contained on this invoice to be true and correct.",
+  "signature_block": {
+    "signature": null,
+    "title": "President",
+    "date": null
+  },
+  "copyright": "© 2000 Diversitech Co. All rights reserved."
+}
